@@ -4,6 +4,7 @@ Handles order management, position tracking, and risk management.
 """
 
 import ccxt
+import ccxt.async_support as ccxt_async
 import pandas as pd
 import numpy as np
 from typing import Dict, List, Any, Optional
@@ -110,9 +111,9 @@ class Trader:
         self.order_history: List[Dict] = []
         self.balance = 0.0
         
-    def _initialize_exchange(self, config: Dict[str, Any]) -> ccxt.Exchange:
+    def _initialize_exchange(self, config: Dict[str, Any]) -> ccxt_async.Exchange:
         """Initialize exchange connection"""
-        exchange_class = getattr(ccxt, config['exchange_name'])
+        exchange_class = getattr(ccxt_async, config['exchange_name'])
         
         exchange = exchange_class({
             'apiKey': config['api_key'],
@@ -123,6 +124,11 @@ class Trader:
         
         logger.info(f"Initialized {config['exchange_name']} exchange (sandbox: {config.get('sandbox', True)})")
         return exchange
+    
+    async def close(self):
+        """Close the exchange connection"""
+        if hasattr(self.exchange, 'close'):
+            await self.exchange.close()
     
     async def get_balance(self) -> float:
         """Get account balance"""

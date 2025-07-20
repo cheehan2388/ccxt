@@ -16,6 +16,7 @@ async def test_data_providers():
     """Test data provider functionality"""
     logger.info("Testing data providers...")
     
+    binance = None
     try:
         from data_provider import BinanceDataProvider, DataManager
         
@@ -53,6 +54,13 @@ async def test_data_providers():
     except Exception as e:
         logger.error(f"✗ Data provider test failed: {e}")
         return False
+    finally:
+        # Clean up connections
+        if binance:
+            try:
+                await binance.close()
+            except Exception:
+                pass
     
     return True
 

@@ -4,6 +4,7 @@ Supports multiple data sources and preprocessing methods.
 """
 
 import ccxt
+import ccxt.async_support as ccxt_async
 import pandas as pd
 import numpy as np
 from abc import ABC, abstractmethod
@@ -36,7 +37,7 @@ class BinanceDataProvider(DataProvider):
     """Binance data provider for fetching market data"""
     
     def __init__(self, api_key: str = '', secret_key: str = '', sandbox: bool = False):
-        self.exchange = ccxt.binance({
+        self.exchange = ccxt_async.binance({
             'apiKey': api_key,
             'secret': secret_key,
             'sandbox': sandbox,
@@ -46,13 +47,18 @@ class BinanceDataProvider(DataProvider):
     def get_name(self) -> str:
         return "Binance"
     
+    async def close(self):
+        """Close the exchange connection"""
+        if hasattr(self.exchange, 'close'):
+            await self.exchange.close()
+    
     async def fetch_open_interest(self, symbol: str) -> Dict[str, Any]:
         """Fetch open interest data from Binance"""
         try:
             # Convert symbol format if needed
             symbol_formatted = symbol.replace('/', '')
             
-            # Fetch open interest data
+            # Fetch open interest data (async call)
             open_interest = await self.exchange.fetch_open_interest(symbol)
             
             return {
@@ -82,7 +88,7 @@ class BybitDataProvider(DataProvider):
     """Bybit data provider for fetching market data"""
     
     def __init__(self, api_key: str = '', secret_key: str = '', sandbox: bool = True):
-        self.exchange = ccxt.bybit({
+        self.exchange = ccxt_async.bybit({
             'apiKey': api_key,
             'secret': secret_key,
             'sandbox': sandbox,
@@ -91,6 +97,11 @@ class BybitDataProvider(DataProvider):
         
     def get_name(self) -> str:
         return "Bybit"
+    
+    async def close(self):
+        """Close the exchange connection"""
+        if hasattr(self.exchange, 'close'):
+            await self.exchange.close()
     
     async def fetch_open_interest(self, symbol: str) -> Dict[str, Any]:
         """Fetch open interest data from Bybit"""

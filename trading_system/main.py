@@ -271,6 +271,17 @@ class TradingSystem:
         # for symbol in list(self.trader.positions.keys()):
         #     await self.trader.close_position(symbol)
         
+        # Close exchange connections
+        try:
+            if self.trader:
+                await self.trader.close()
+            
+            for provider in self.data_manager.providers.values():
+                if hasattr(provider, 'close'):
+                    await provider.close()
+        except Exception as e:
+            logger.error(f"Error during cleanup: {e}")
+        
         logger.info("Trading system stopped")
     
     async def _test_connections(self):
