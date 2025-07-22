@@ -64,45 +64,57 @@ async def test_data_providers():
     
     return True
 
-def test_preprocessors():
-    """Test preprocessor functionality"""
-    logger.info("Testing preprocessors...")
+def test_feature_engineering():
+    """Test feature engineering functionality"""
+    logger.info("Testing feature engineering...")
     
     try:
-        from preprocessor import ZScorePreprocessor, PreprocessorManager
+        from feature_engineering import create_default_feature_engineering_manager
+        import pandas as pd
         import numpy as np
         
-        # Create test data
-        test_data = [
-            {'open_interest': 100 + i + np.random.normal(0, 5)} 
-            for i in range(25)
-        ]
+        # Create test data (OHLCV format)
+        dates = pd.date_range(start='2023-01-01', periods=50, freq='1h')
+        base_price = 50000
+        price_changes = np.cumsum(np.random.randn(50) * 10)
         
-        # Test Z-score preprocessor
-        zscore_processor = ZScorePreprocessor(window_size=20, min_periods=5)
-        result = zscore_processor.process(test_data)
+        test_data = pd.DataFrame({
+            'open': base_price + price_changes,
+            'high': base_price + price_changes + np.abs(np.random.randn(50) * 50),
+            'low': base_price + price_changes - np.abs(np.random.randn(50) * 50),
+            'close': base_price + price_changes + np.random.randn(50) * 20,
+            'volume': np.random.randint(1000, 10000, 50),
+            'open_interest': 100000 + np.cumsum(np.random.randn(50) * 1000)
+        })
         
-        if result.get('valid', False):
-            logger.info(f"✓ Z-score calculation successful: {result['zscore']:.3f}")
-        else:
-            logger.error("✗ Z-score calculation failed")
-            return False
+        # Add timestamp as index instead of column to avoid arithmetic issues
+        test_data.index = dates
         
-        # Test preprocessor manager
-        manager = PreprocessorManager()
-        manager.add_preprocessor("zscore", zscore_processor)
+        # Test feature engineering manager
+        feature_manager = create_default_feature_engineering_manager()
+        features = feature_manager.calculate_all_features(test_data)
         
-        all_results = manager.process_data(test_data)
-        if 'zscore' in all_results and all_results['zscore'].get('valid', False):
-            logger.info("✓ Preprocessor manager test successful")
-        else:
-            logger.error("✗ Preprocessor manager test failed")
-            return False
+        # Check if features were calculated
+        expected_features = ['statistical', 'technical', 'volume']
+        for feature_type in expected_features:
+            if feature_type in features and features[feature_type].get('valid', False):
+                logger.info(f"✓ {feature_type.capitalize()} features calculated successfully")
+            else:
+                logger.error(f"✗ {feature_type.capitalize()} features calculation failed")
+                return False
         
-        logger.info("✓ Preprocessor test completed")
+        # Check specific features
+        if 'statistical' in features:
+            stats = features['statistical']
+            if 'zscore' in stats:
+                logger.info(f"✓ Z-score calculated: {stats['zscore']:.3f}")
+            else:
+                logger.warning("⚠ Z-score not found in statistical features")
+        
+        logger.info("✓ Feature engineering test completed")
         
     except Exception as e:
-        logger.error(f"✗ Preprocessor test failed: {e}")
+        logger.error(f"✗ Feature engineering test failed: {e}")
         return False
     
     return True
@@ -112,48 +124,82 @@ def test_strategies():
     logger.info("Testing strategies...")
     
     try:
-        from strategy import ZScoreStrategy, StrategyManager, SignalType
-        from preprocessor import ZScorePreprocessor
+        from strategy_v2 import create_strategy_selector, SignalType
         
-        # Create test processed data
-        processed_data = {
-            'zscore': {
+        # Create test features data (matching new feature engineering format)
+        test_features = {
+            'statistical': {
                 'zscore': 1.5,  # Should trigger long signal
                 'mean': 100.0,
                 'std': 10.0,
-                'value': 115.0,
+                'current_value': 115.0,
+                'valid': True
+            },
+            'technical': {
+                'sma_fast': 50100.0,
+                'sma_slow': 50000.0,
+                'ema_fast': 50120.0,
+                'rsi': 65.0,
+                'bb_upper': 51000.0,
+                'bb_lower': 49000.0,
+                'valid': True
+            },
+            'volume': {
+                'volume_sma': 5000.0,
+                'volume_ratio': 1.2,
+                'vwap': 50050.0,
                 'valid': True
             }
         }
         
-        # Test Z-score strategy
-        strategy = ZScoreStrategy(long_threshold=1.3, short_threshold=-1.3)
-        signal = strategy.generate_signal(processed_data)
+        # Test strategy selector with different strategies
+        strategy_selector = create_strategy_selector(threshold=1.3)
         
-        if signal.signal_type == SignalType.LONG:
-            logger.info(f"✓ Strategy generated expected LONG signal: {signal}")
+        # Test Mean Reversion V1
+        strategy_selector.set_active_strategy("mean_reversion_v1")
+        signal = strategy_selector.generate_signal(test_features)
+        
+        if signal.signal_type == SignalType.SHORT:  # Mean reversion: high z-score = short
+            logger.info(f"✓ Mean Reversion V1 generated expected SHORT signal: {signal}")
         else:
-            logger.warning(f"⚠ Strategy generated unexpected signal: {signal}")
+            logger.warning(f"⚠ Mean Reversion V1 generated unexpected signal: {signal}")
         
-        # Test with short signal
-        processed_data['zscore']['zscore'] = -1.8
-        signal = strategy.generate_signal(processed_data)
+        # Test with low z-score
+        test_features['statistical']['zscore'] = -1.8
+        signal = strategy_selector.generate_signal(test_features)
         
-        if signal.signal_type == SignalType.SHORT:
-            logger.info(f"✓ Strategy generated expected SHORT signal: {signal}")
+        if signal.signal_type == SignalType.LONG:  # Mean reversion: low z-score = long
+            logger.info(f"✓ Mean Reversion V1 generated expected LONG signal: {signal}")
         else:
-            logger.warning(f"⚠ Strategy generated unexpected signal: {signal}")
+            logger.warning(f"⚠ Mean Reversion V1 generated unexpected signal: {signal}")
         
-        # Test strategy manager
-        manager = StrategyManager()
-        manager.add_strategy("zscore", strategy, weight=1.0)
+        # Test Trend Following V1
+        strategy_selector.set_active_strategy("trend_following_v1")
+        test_features['statistical']['zscore'] = 1.8  # High z-score
+        signal = strategy_selector.generate_signal(test_features)
         
-        signals = manager.generate_signals(processed_data)
-        if 'zscore' in signals:
-            logger.info("✓ Strategy manager test successful")
+        if signal.signal_type == SignalType.LONG:  # Trend following: high z-score = long
+            logger.info(f"✓ Trend Following V1 generated expected LONG signal: {signal}")
         else:
-            logger.error("✗ Strategy manager test failed")
-            return False
+            logger.warning(f"⚠ Trend Following V1 generated unexpected signal: {signal}")
+        
+        # Test Multi-Feature Strategy
+        strategy_selector.set_active_strategy("multi_feature")
+        signal = strategy_selector.generate_signal(test_features)
+        
+        if signal.signal_type in [SignalType.LONG, SignalType.SHORT, SignalType.HOLD]:
+            logger.info(f"✓ Multi-Feature strategy generated valid signal: {signal}")
+        else:
+            logger.warning(f"⚠ Multi-Feature strategy generated unexpected signal: {signal}")
+        
+        # Test available strategies
+        available_strategies = strategy_selector.get_available_strategies()
+        expected_strategies = ["mean_reversion_v1", "mean_reversion_v2", "trend_following_v1", "trend_following_v2", "multi_feature"]
+        
+        if all(strategy in available_strategies for strategy in expected_strategies):
+            logger.info("✓ All expected strategies are available")
+        else:
+            logger.warning(f"⚠ Some strategies missing. Available: {available_strategies}")
         
         logger.info("✓ Strategy test completed")
         
@@ -252,7 +298,7 @@ async def run_all_tests():
     
     tests = [
         ("Configuration", test_configuration),
-        ("Preprocessors", test_preprocessors),
+        ("Feature Engineering", test_feature_engineering),
         ("Strategies", test_strategies),
         ("Risk Management", test_risk_management),
         ("Data Providers", test_data_providers),

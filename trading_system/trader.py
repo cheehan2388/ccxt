@@ -11,7 +11,7 @@ from typing import Dict, List, Any, Optional
 import logging
 from datetime import datetime
 import asyncio
-from strategy import TradingSignal, SignalType
+from strategy_v2 import TradingSignal, SignalType
 
 logger = logging.getLogger(__name__)
 
